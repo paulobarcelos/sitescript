@@ -1,21 +1,21 @@
 var 
-fs = require('node-fs'),
+fs = require('fs'),
 handlebars = require('handlebars'),
 http = require('http'),
-requirejs = require('requirejs'),
+wrench = require('wrench'),
 static = require('node-static');
 
+var setup = function(templatesPath, contentPath, publishPath){
+	templatesPath = templatesPath || './site/templates';
+	contentPath = contentPath || './site/content';
+	publishPath = publishPath || './site/www';
 
-
-var setup = function(){
-	var templates = getTemplates('./templates');
-	var content = getContent('./content');
-	clearDirectory('./www');
-
+	var templates = getTemplates(templatesPath);
+	var content = getContent(contentPath);
+	
 	compileTemplates(content, templates);
 	createPermalinks(content);
-
-	console.log(content);
+	publish(content, publishPath)
 }
 var compileTemplates = function(content, templates){
 	try{
@@ -114,22 +114,9 @@ var getTemplates = function(path){
 	}
 	return templates;
 }
-var clearDirectory = function(path, clearSelf){
-	clearSelf = clearSelf || false;
-	var files = [];
-	if( fs.existsSync(path) ) {
-		files = fs.readdirSync(path);
-		files.forEach(function(file,index){
-			var curPath = path + "/" + file;
-			if(fs.statSync(curPath).isDirectory()) {
-				clear(clearDirectory, true);
-			}
-			else {
-				fs.unlinkSync(curPath);
-			}
-		});
-		if(clearSelf) fs.rmdirSync(path);
-	}
+var publish = function(content, path){
+	wrench.rmdirSyncRecursive(path, true);
+	fs.mkdirSync(path);
 }
 
 
