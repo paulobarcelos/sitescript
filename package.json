@@ -1,0 +1,19 @@
+{
+	"name": "sitescript",
+	"version": "0.0.1",
+	"author": "",
+	"description": "Static site thingie inspired by scriptogram-",
+	"dependencies" : {
+		"node-static": "0.6.4",
+		"requirejs": "2.1.1",
+		"handlebars": "1.0.7"
+	},
+	"engines": {
+		"node": "0.6.x"
+	},
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/paulobarcelos/sitescript.git"
+	}
+}
