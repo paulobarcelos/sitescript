@@ -1,60 +1,102 @@
 var 
-fs = require('fs'),
+fs = require('node-fs'),
 handlebars = require('handlebars'),
 http = require('http'),
 requirejs = require('requirejs'),
 static = require('node-static');
 
+
+
 var setup = function(){
 	var templates = getTemplates('./templates');
 	var content = getContent('./content');
-	compile(content, templates);
+	clearDirectory('./www');
+
+	compileTemplates(content, templates);
+	createPermalinks(content);
+
 	console.log(content);
 }
-
-var compile = function(content, templates){
+var compileTemplates = function(content, templates){
 	try{
-		content.compiled = templates[content.data.template](content.data);
+		content.data.compiled = templates[content.data.template](content.data);
 	}
 	catch(e){
 		return null;	
 	}
 
 	for(slug in content.children){
-		compile(content.children[slug], templates);
+		compileTemplates(content.children[slug], templates);
 	}
 }
-
-var getContent = function(path){
-	var content = {
-		data: null,
-		children: {}
-	}
+var createPermalinks = function(content){
 	try{
-		content.data = require(path + '/_data');
+		var parent = content.data.parent;
+		if(parent){
+			content.data.permalink = parent.data.permalink + content.data.slug + '/';
+		}
+		else content.data.permalink = '/';
 	}
 	catch(e){
 		return null;	
 	}
 
+	for(slug in content.children){
+		createPermalinks(content.children[slug]);
+	}
+}
+var getContent = function(path){
+	var content = {
+		data: {},
+		resources: [],
+		children: {}
+	}
+	
 	var dir = fs.readdirSync(path);
 	for (var i = 0; i < dir.length; i++) {
-		var slug = dir[i];
-		if(slug !== '_data.js'){
-			var stat = fs.statSync(path + '/' + slug);
-			if(stat.isDirectory()){
-				var child = getContent(path + '/' + slug)
-				if(child){
-					child.data.slug = slug;
-					content.children[slug] = child;
-				}
-			}
+		var filename = dir[i];
+		var filepath = path + '/' + filename;
+		var stat = fs.statSync(filepath);
 
+		// Data File
+		if(filename == 'data.js'){
+			try{
+				content.data = require(path + '/data');
+			}
+			catch(e){
+				console.log(filename + ' is not a valid data file.');	
+			}			
+			continue;
 		}
+
+		// Ignore hidden files
+		if(filename.substr(0,1) === '.'){
+			continue;
+		}
+
+		// Preprocess content
+		if(filename == 'content.html' || filename == 'content.htm'){
+			continue;
+		}
+		
+		// Recurse children
+		if(stat.isDirectory() && filename.substr(0,1) === '_'){
+			var child = getContent(filepath)
+			if(child){
+				var slug = filename.substring(1);
+				child.data.slug = slug;
+				child.data.parent = content;
+				content.children[slug] = child;
+			}
+			continue;
+		}
+
+		// Resources references
+		content.resources.push(filename);
+
 	}
 	return content;
 }
-
 var getTemplates = function(path){
 	var templates = {};
 
@@ -72,6 +114,25 @@ var getTemplates = function(path){
 	}
 	return templates;
 }
+var clearDirectory = function(path, clearSelf){
+	clearSelf = clearSelf || false;
+	var files = [];
+	if( fs.existsSync(path) ) {
+		files = fs.readdirSync(path);
+		files.forEach(function(file,index){
+			var curPath = path + "/" + file;
+			if(fs.statSync(curPath).isDirectory()) {
+				clear(clearDirectory, true);
+			}
+			else {
+				fs.unlinkSync(curPath);
+			}
+		});
+		if(clearSelf) fs.rmdirSync(path);
+	}
+}
+
+
 setup();
 
 
