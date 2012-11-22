@@ -1,171 +1,253 @@
 var 
 exports = module.exports,
 fs = require('fs'),
-handlebars = require('handlebars'),
 http = require('http'),
+handlebars = require('handlebars'),
 wrench = require('wrench'),
+md = require('marked'),
 static = require('node-static');
 
-var setup = function(contentPath, templatesPath, publishPath, serverPort){
-	contentPath = contentPath || './site/content';
-	templatesPath = templatesPath || './site/templates';
-	publishPath = publishPath || './site/www';
-	serverPort = serverPort|| 8080;
-
-	var templates = getTemplates(templatesPath);
-	var content = getContent(contentPath);
+var setup = function(options){
+	var settings = generateValidSettings(options);
 	
-	compileTemplates(content, templates);
-	createPermalinks(content);
-	createPaths(content);
+	var templates = getTemplates(settings.templates);
+	var rootPost = getPost(settings.posts);
 	
-	publish(content, contentPath, publishPath);
+	applyPermalinks(rootPost);
+	applyPaths(rootPost);
+
+	preprocessContent(rootPost, templates);
+	applyCompiledTemplates(rootPost, templates);
+	applyCompiled404Template(rootPost, templates);
+		
+	clearRoot(settings.serve);
+
+	createDirectories(rootPost, settings.serve);
+	createIndexFiles(rootPost, settings.serve);
+	create404File(rootPost, settings.serve);
+	createResourceSymlinks(rootPost, settings.posts, settings.serve);
 	
-	serve(publishPath, serverPort);
+	serve(settings.serve, settings.port);
 }
-var compileTemplates = function(content, templates){
-	try{
-		content.data.compiled = templates[content.data.template](content.data);
+var generateValidSettings = function(options){
+	if(typeof(options) !== 'object'){
+		options = {};
+		console.log('"options" are invalid!');
 	}
-	catch(e){
-		return null;	
+	if(!options.posts){
+		options.posts = './site/posts';
+		console.log('"posts" path not specified, using default '+ options.posts);
+	}
+	else {
+		console.log('"posts" path - ' + options.posts);
+	}
+	if(!options.templates){
+		options.templates = './site/templates';
+		console.log('"templates" path not specified, using default '+ options.templates);
+	}
+	else {
+		console.log('"templates" path - ' + options.templates);
+	}
+	if(!options.serve){
+		options.serve = './site/serve';
+		console.log('"serve" path not specified, using default '+ options.serve);
+	}
+	else {
+		console.log('"serve" path - ' + options.serve);
+	}
+	if(!options.port){
+		options.port = 8080;
+		console.log('"port" not specified, using default '+ options.port);
+	}
+	else {
+		console.log('"port" - ' + options.port);
 	}
 
-	for(slug in content.children){
-		compileTemplates(content.children[slug], templates);
-	}
+	return options;
 }
-var createPermalinks = function(content){
-	var parent = content.data.parent;
-	if(parent){
-		content.data.permalink = parent.data.permalink + content.data.slug + '/';
-	}
-	else content.data.permalink = '/';
-
-	for(slug in content.children){
-		createPermalinks(content.children[slug]);
-	}
-}
-var createPaths = function(content){
-	var parent = content.data.parent;
-	if(parent){
-		content.data.path = parent.data.path + "_" + content.data.slug + '/';
-	}
-	else content.data.path = '/';
-
-	for(slug in content.children){
-		createPaths(content.children[slug]);
-	}
-}
-var createDirectories = function(content, rootPath){
-	wrench.mkdirSyncRecursive(rootPath + content.data.permalink , 0777);
-
-	for(slug in content.children){
-		createDirectories(content.children[slug], rootPath);
-	}
-}
-var createIndexes = function(content, rootPath){
-	fs.writeFileSync(rootPath + content.data.permalink + 'index.html', content.data.compiled, 'utf8');
-
-	for(slug in content.children){
-		createIndexes(content.children[slug], rootPath);
-	}
-}
-var linkResources = function(content, rootContentPath, rootPublishPath){
-	for (var i = 0; i < content.resources.length; i++) {
-		var src = __dirname + '/' + rootContentPath + content.data.path +  content.resources[i];
-		var dst = __dirname + '/' + rootPublishPath + content.data.permalink +  content.resources[i];
-		fs.symlinkSync(src, dst);
-	};
-	for(slug in content.children){
-		linkResources(content.children[slug], rootContentPath, rootPublishPath);
-	}
-}
-var getContent = function(path){
-	var content = {
+var getPost = function(path, root){
+	var post = {
 		data: {},
 		resources: [],
 		children: {}
 	}
-	
+	root = root || post;
+
+	try{
+		post.data = require(path + '/data');
+	}
+	catch(e){
+		console.log(filename + ' is not a valid data file.');	
+	}
+
+	post.data.root = root;	
+
 	var dir = fs.readdirSync(path);
 	for (var i = 0; i < dir.length; i++) {
 		var filename = dir[i];
 		var filepath = path + '/' + filename;
 		var stat = fs.statSync(filepath);
 
-		// Data File
-		if(filename == 'data.js'){
+		// Ignore hidden files and data.js
+		if(filename.substr(0,1) === '.' || filename === 'data.js'){
+			continue;
+		}
+
+		// Store raw content
+		if(filename === 'content.md' || filename === 'content.mdown' || filename === 'content.markdown'){
 			try{
-				content.data = require(path + '/data');
+				post.data.rawContent = fs.readFileSync(path + '/' + filename, 'utf8');
 			}
 			catch(e){
-				console.log(filename + ' is not a valid data file.');	
-			}			
-			continue;
-		}
-
-		// Ignore hidden files
-		if(filename.substr(0,1) === '.'){
-			continue;
-		}
-
-		// Preprocess content
-		if(filename == 'content.html' || filename == 'content.htm'){
+				console.log(filename + ' is not a valid content file.');	
+			}
 			continue;
 		}
 		
 		// Recurse children
 		if(stat.isDirectory() && filename.substr(0,1) === '_'){
-			var child = getContent(filepath)
+			var child = getPost(filepath, root)
 			if(child){
 				var slug = filename.substring(1);
 				child.data.slug = slug;
-				child.data.parent = content;
-				content.children[slug] = child;
+				child.data.parent = post;
+				post.children[slug] = child;
 			}
 			continue;
 		}
 
 		// Resources references
-		content.resources.push(filename);
+		post.resources.push(filename);
 
 	}
-	return content;
+	return post;
 }
 var getTemplates = function(path){
 	var templates = {};
-
 	var dir = fs.readdirSync(path);
 	for (var i = 0; i < dir.length; i++) {
 		var file = dir[i];
 		var ext = file.substr(file.lastIndexOf('.')+1);
 		var stat = fs.statSync(path + '/' + file);
-		if(stat.isFile() && (ext == 'html' || ext == 'htm')){
+		if(stat.isFile() && (ext == 'html' || ext == 'html')){
 			var id = file.substr(0, file.lastIndexOf('.')); // ignore extension
+			
 			var source = fs.readFileSync(path + '/' + file, 'utf8');
+			handlebars.registerPartial(id, source);			
 			var template = handlebars.compile(source);
+			
 			templates[id] = template;
 		}		
 	}
 	return templates;
 }
-var publish = function(content, contentPath, publishPath){
-	wrench.rmdirSyncRecursive(publishPath, true);
-	fs.mkdirSync(publishPath);
+var applyPermalinks = function(post){
+	var parent = post.data.parent;
+	if(parent){
+		post.data.permalink = parent.data.permalink + post.data.slug + '/';
+	}
+	else post.data.permalink = '/';
 
-	createDirectories(content, publishPath);
-	createIndexes(content, publishPath);
+	for(slug in post.children){
+		applyPermalinks(post.children[slug]);
+	}
+}
+var applyPaths = function(post){
+	var parent = post.data.parent;
+	if(parent){
+		post.data.path = parent.data.path + "_" + post.data.slug + '/';
+	}
+	else {
+		post.data.path = '/';
+	}
 
-	linkResources(content, contentPath, publishPath);
+	for(slug in post.children){
+		applyPaths(post.children[slug]);
+	}
+}
+var preprocessContent = function(post, templates){
+	if(post.data.rawContent){
+		// Make the content into a template and run the data through it
+		var template = handlebars.compile(post.data.rawContent);
+		var markdown = template(post.data);
+		// Finally convert the MD to markup
+		post.data.content = md(markdown);
+	}
+
+	for(slug in post.children){
+		preprocessContent(post.children[slug], templates);
+	}
+}
+var applyCompiledTemplates = function(post, templates){
+	try{
+		post.data.compiled = templates[post.data.template](post.data);
+	}
+	catch(e){}
+
+	for(slug in post.children){
+		applyCompiledTemplates(post.children[slug], templates);
+	}
+}
+var applyCompiled404Template = function(post, templates){
+	var parent = post.data.parent;
+	if(!parent){
+		if(templates['404']){
+			post.data.compiled404 = templates['404'](post.data);
+		}
+		else post.data.compiled404 = '<h1>404</h1>';
+	}
+}
+var clearRoot = function(path){
+	wrench.rmdirSyncRecursive(path, true);
+	fs.mkdirSync(path);
+}
+var createDirectories = function(post, rootPath){
+	wrench.mkdirSyncRecursive(rootPath + post.data.permalink , 0777);
+
+	for(slug in post.children){
+		createDirectories(post.children[slug], rootPath);
+	}
+}
+var createIndexFiles = function(post, rootPath){
+	fs.writeFileSync(rootPath + post.data.permalink + 'index.html', post.data.compiled, 'utf8');
+
+	for(slug in post.children){
+		createIndexFiles(post.children[slug], rootPath);
+	}
+}
+var create404File = function(post, rootPath){
+	var parent = post.data.parent;
+	if(!parent){
+		fs.writeFileSync(rootPath + post.data.permalink + '404.html', post.data.compiled404, 'utf8');
+	}
+}
+var createResourceSymlinks = function(post, rootContentPath, rootPublishPath){
+	for (var i = 0; i < post.resources.length; i++) {
+		var src = __dirname + '/' + rootContentPath + post.data.path +  post.resources[i];
+		var dst = __dirname + '/' + rootPublishPath + post.data.permalink +  post.resources[i];
+		fs.symlinkSync(src, dst);
+	};
+	for(slug in post.children){
+		createResourceSymlinks(post.children[slug], rootContentPath, rootPublishPath);
+	}
 }
 var serve = function(path, port){
-	console.log("Serving " + path + " at port " + port + "...");
 	var file = new(static.Server)(path);
 
+	var serve404 = function(request, response){
+		file.serveFile('/404.html', 404, {}, request, response);
+	}
 	http.createServer(function (request, response) {
 		request.addListener('end', function () {
-			file.serve(request, response);
+			if(request.url == '/404.html'){
+				serve404(request, response);
+				return;
+			}
+			file.serve(request, response, function (e, res) {
+				if ((e && (e.status === 404))) {
+					serve404(request, response);
+				}
+			});
 		});
 	}).listen(port);
 }

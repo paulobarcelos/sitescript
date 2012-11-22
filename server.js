@@ -1,8 +1,8 @@
 var sitescript = require('./sitescript');
 
-sitescript.setup(
-	'./site/content', 
-	'./site/templates',
-	'./site/www',
-	process.env.VCAP_APP_PORT || 8080
-);
+sitescript.setup({
+	posts: './site/posts', 
+	templates: './site/templates',
+	serve: './site/serve',
+	port: process.env.VCAP_APP_PORT || 8080
+});
