@@ -1,2 +1,2 @@
-exports.name = "child2";
+exports.title = "child2";
 exports.template = "post";

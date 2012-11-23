@@ -10,8 +10,8 @@ static = require('node-static');
 var setup = function(options){
 	var settings = generateValidSettings(options);
 	
-	var templates = getTemplates(settings.templates);
-	var rootPost = getPost(settings.posts);
+	var templates = exctractTemplates(settings.templates);
+	var rootPost = extractPost(settings.posts);
 	
 	applyPermalinks(rootPost);
 	applyPaths(rootPost);
@@ -65,28 +65,24 @@ var generateValidSettings = function(options){
 
 	return options;
 }
-var getPost = function(path, root){
-	var post = {
-		data: {},
-		resources: [],
-		children: {}
-	}
-	root = root || post;
-
+var extractPost = function(path, root){
+	var post;
 	try{
-		post.data = require(path + '/data');
+		post = require(path + '/data');
 	}
 	catch(e){
-		console.log(filename + ' is not a valid data file.');	
+		console.log(filename + ' is not a valid data file.');
+		post = {};	
 	}
-
-	post.data.root = root;	
+	post.children = [];
+	post.root = root || post;
+	post.resources = [];
 
 	var dir = fs.readdirSync(path);
 	for (var i = 0; i < dir.length; i++) {
 		var filename = dir[i];
 		var filepath = path + '/' + filename;
-		var stat = fs.statSync(filepath);
+		var stat = fs.lstatSync(filepath);
 
 		// Ignore hidden files and data.js
 		if(filename.substr(0,1) === '.' || filename === 'data.js'){
@@ -96,7 +92,7 @@ var getPost = function(path, root){
 		// Store raw content
 		if(filename === 'content.md' || filename === 'content.mdown' || filename === 'content.markdown'){
 			try{
-				post.data.rawContent = fs.readFileSync(path + '/' + filename, 'utf8');
+				post.rawContent = fs.readFileSync(path + '/' + filename, 'utf8');
 			}
 			catch(e){
 				console.log(filename + ' is not a valid content file.');	
@@ -106,12 +102,12 @@ var getPost = function(path, root){
 		
 		// Recurse children
 		if(stat.isDirectory() && filename.substr(0,1) === '_'){
-			var child = getPost(filepath, root)
+			var child = extractPost(filepath, post.root)
 			if(child){
 				var slug = filename.substring(1);
-				child.data.slug = slug;
-				child.data.parent = post;
-				post.children[slug] = child;
+				child.slug = slug;
+				child.parent = post;
+				post.children.push(child);
 			}
 			continue;
 		}
@@ -122,7 +118,7 @@ var getPost = function(path, root){
 	}
 	return post;
 }
-var getTemplates = function(path){
+var exctractTemplates = function(path){
 	var templates = {};
 	var dir = fs.readdirSync(path);
 	for (var i = 0; i < dir.length; i++) {
@@ -142,59 +138,59 @@ var getTemplates = function(path){
 	return templates;
 }
 var applyPermalinks = function(post){
-	var parent = post.data.parent;
+	var parent = post.parent;
 	if(parent){
-		post.data.permalink = parent.data.permalink + post.data.slug + '/';
+		post.permalink = parent.permalink + post.slug + '/';
 	}
-	else post.data.permalink = '/';
+	else post.permalink = '/';
 
-	for(slug in post.children){
-		applyPermalinks(post.children[slug]);
+	for(var i = 0; i < post.children.length; i++){
+		applyPermalinks(post.children[i]);
 	}
 }
 var applyPaths = function(post){
-	var parent = post.data.parent;
+	var parent = post.parent;
 	if(parent){
-		post.data.path = parent.data.path + "_" + post.data.slug + '/';
+		post.path = parent.path + "_" + post.slug + '/';
 	}
 	else {
-		post.data.path = '/';
+		post.path = '/';
 	}
 
-	for(slug in post.children){
-		applyPaths(post.children[slug]);
+	for(var i = 0; i < post.children.length; i++){
+		applyPaths(post.children[i]);
 	}
 }
 var preprocessContent = function(post, templates){
-	if(post.data.rawContent){
+	if(post.rawContent){
 		// Make the content into a template and run the data through it
-		var template = handlebars.compile(post.data.rawContent);
-		var markdown = template(post.data);
+		var template = handlebars.compile(post.rawContent);
+		var markdown = template(post);
 		// Finally convert the MD to markup
-		post.data.content = md(markdown);
+		post.content = md(markdown);
 	}
 
-	for(slug in post.children){
-		preprocessContent(post.children[slug], templates);
+	for(var i = 0; i < post.children.length; i++){
+		preprocessContent(post.children[i], templates);
 	}
 }
 var applyCompiledTemplates = function(post, templates){
 	try{
-		post.data.compiled = templates[post.data.template](post.data);
+		post.compiled = templates[post.template](post);
 	}
 	catch(e){}
 
-	for(slug in post.children){
-		applyCompiledTemplates(post.children[slug], templates);
+	for(var i = 0; i < post.children.length; i++){
+		applyCompiledTemplates(post.children[i], templates);
 	}
 }
 var applyCompiled404Template = function(post, templates){
-	var parent = post.data.parent;
+	var parent = post.parent;
 	if(!parent){
 		if(templates['404']){
-			post.data.compiled404 = templates['404'](post.data);
+			post.compiled404 = templates['404'](post);
 		}
-		else post.data.compiled404 = '<h1>404</h1>';
+		else post.compiled404 = '<h1>404</h1>';
 	}
 }
 var clearRoot = function(path){
@@ -202,33 +198,33 @@ var clearRoot = function(path){
 	fs.mkdirSync(path);
 }
 var createDirectories = function(post, rootPath){
-	wrench.mkdirSyncRecursive(rootPath + post.data.permalink , 0777);
+	wrench.mkdirSyncRecursive(rootPath + post.permalink , 0777);
 
-	for(slug in post.children){
-		createDirectories(post.children[slug], rootPath);
+	for(var i = 0; i < post.children.length; i++){
+		createDirectories(post.children[i], rootPath);
 	}
 }
 var createIndexFiles = function(post, rootPath){
-	fs.writeFileSync(rootPath + post.data.permalink + 'index.html', post.data.compiled, 'utf8');
+	fs.writeFileSync(rootPath + post.permalink + 'index.html', post.compiled, 'utf8');
 
-	for(slug in post.children){
-		createIndexFiles(post.children[slug], rootPath);
+	for(var i = 0; i < post.children.length; i++){
+		createIndexFiles(post.children[i], rootPath);
 	}
 }
 var create404File = function(post, rootPath){
-	var parent = post.data.parent;
+	var parent = post.parent;
 	if(!parent){
-		fs.writeFileSync(rootPath + post.data.permalink + '404.html', post.data.compiled404, 'utf8');
+		fs.writeFileSync(rootPath + post.permalink + '404.html', post.compiled404, 'utf8');
 	}
 }
 var createResourceSymlinks = function(post, rootContentPath, rootPublishPath){
 	for (var i = 0; i < post.resources.length; i++) {
-		var src = __dirname + '/' + rootContentPath + post.data.path +  post.resources[i];
-		var dst = __dirname + '/' + rootPublishPath + post.data.permalink +  post.resources[i];
+		var src = __dirname + '/' + rootContentPath + post.path +  post.resources[i];
+		var dst = __dirname + '/' + rootPublishPath + post.permalink +  post.resources[i];
 		fs.symlinkSync(src, dst);
 	};
-	for(slug in post.children){
-		createResourceSymlinks(post.children[slug], rootContentPath, rootPublishPath);
+	for(var i = 0; i < post.children.length; i++){
+		createResourceSymlinks(post.children[i], rootContentPath, rootPublishPath);
 	}
 }
 var serve = function(path, port){

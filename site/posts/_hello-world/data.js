@@ -1,3 +1,2 @@
-var exports = module.exports;
-exports.name = "hello world";
+exports.title = "hello world";
 exports.template = "post";

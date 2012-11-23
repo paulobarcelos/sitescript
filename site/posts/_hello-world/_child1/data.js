@@ -1,3 +1,2 @@
-var exports = module.exports;
-exports.name = "child1";
+exports.title = "child1";
 exports.template = "post";
