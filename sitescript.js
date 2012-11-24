@@ -10,62 +10,46 @@ static = require('node-static');
 var setup = function(options){
 	var settings = generateValidSettings(options);
 	
-	var templates = exctractTemplates(settings.templates);
-	var rootPost = extractPost(settings.posts);
+	var theme = exctractTheme(settings.theme);
+	var rootPost = extractPostsRecursively(settings.posts);
 	
-	applyPermalinks(rootPost);
-	applyPaths(rootPost);
+	applyPermalinksRecursively(rootPost);
+	applyPathsRecursively(rootPost);
 
-	preprocessContent(rootPost, templates);
-	applyCompiledTemplates(rootPost, templates);
-	applyCompiled404Template(rootPost, templates);
+	preprocessContentRecursively(rootPost, theme.templates);
+	applyCompiledTemplatesRecursively(rootPost, theme.templates);
+	applyCompiled404Template(rootPost, theme.templates);
 		
 	clearRoot(settings.serve);
 
-	createDirectories(rootPost, settings.serve);
-	createIndexFiles(rootPost, settings.serve);
+	createDirectoriesRecursively(rootPost, settings.serve);
+	createIndexFilesRecursively(rootPost, settings.serve);
 	create404File(rootPost, settings.serve);
-	createResourceSymlinks(rootPost, settings.posts, settings.serve);
+	createThemeResourcesSymlinks(theme, settings.theme, settings.serve);
+	createPostResourceSymlinksRecursively(rootPost, settings.posts, settings.serve);
 	
 	serve(settings.serve, settings.port);
 }
 var generateValidSettings = function(options){
 	if(typeof(options) !== 'object'){
 		options = {};
-		console.log('"options" are invalid!');
 	}
 	if(!options.posts){
 		options.posts = './site/posts';
-		console.log('"posts" path not specified, using default '+ options.posts);
 	}
-	else {
-		console.log('"posts" path - ' + options.posts);
-	}
-	if(!options.templates){
-		options.templates = './site/templates';
-		console.log('"templates" path not specified, using default '+ options.templates);
-	}
-	else {
-		console.log('"templates" path - ' + options.templates);
+	if(!options.theme){
+		options.theme = './site/theme';
 	}
 	if(!options.serve){
-		options.serve = './site/serve';
-		console.log('"serve" path not specified, using default '+ options.serve);
-	}
-	else {
-		console.log('"serve" path - ' + options.serve);
+		options.serve = './.www';
 	}
 	if(!options.port){
 		options.port = 8080;
-		console.log('"port" not specified, using default '+ options.port);
-	}
-	else {
-		console.log('"port" - ' + options.port);
 	}
 
 	return options;
 }
-var extractPost = function(path, root){
+var extractPostsRecursively = function(path, root){
 	var post;
 	try{
 		post = require(path + '/data');
@@ -102,7 +86,7 @@ var extractPost = function(path, root){
 		
 		// Recurse children
 		if(stat.isDirectory() && filename.substr(0,1) === '_'){
-			var child = extractPost(filepath, post.root)
+			var child = extractPostsRecursively(filepath, post.root)
 			if(child){
 				var slug = filename.substring(1);
 				child.slug = slug;
@@ -118,26 +102,38 @@ var extractPost = function(path, root){
 	}
 	return post;
 }
-var exctractTemplates = function(path){
-	var templates = {};
+var exctractTheme = function(path){
+	var theme = {
+		templates: {},
+		resources: []
+	}
 	var dir = fs.readdirSync(path);
 	for (var i = 0; i < dir.length; i++) {
-		var file = dir[i];
-		var ext = file.substr(file.lastIndexOf('.')+1);
-		var stat = fs.statSync(path + '/' + file);
+		var filename = dir[i];
+		var ext = filename.substr(filename.lastIndexOf('.')+1);
+		var stat = fs.statSync(path + '/' + filename);
+
+		if(filename.substr(0,1) === '.'){
+			continue;
+		}
+
 		if(stat.isFile() && (ext == 'html' || ext == 'html')){
-			var id = file.substr(0, file.lastIndexOf('.')); // ignore extension
+			var id = filename.substr(0, filename.lastIndexOf('.')); // ignore extension
 			
-			var source = fs.readFileSync(path + '/' + file, 'utf8');
+			var source = fs.readFileSync(path + '/' + filename, 'utf8');
 			handlebars.registerPartial(id, source);			
 			var template = handlebars.compile(source);
 			
-			templates[id] = template;
-		}		
+			theme.templates[id] = template;
+
+			continue;
+		}
+		
+		theme.resources.push(filename);
 	}
-	return templates;
+	return theme;
 }
-var applyPermalinks = function(post){
+var applyPermalinksRecursively = function(post){
 	var parent = post.parent;
 	if(parent){
 		post.permalink = parent.permalink + post.slug + '/';
@@ -145,10 +141,10 @@ var applyPermalinks = function(post){
 	else post.permalink = '/';
 
 	for(var i = 0; i < post.children.length; i++){
-		applyPermalinks(post.children[i]);
+		applyPermalinksRecursively(post.children[i]);
 	}
 }
-var applyPaths = function(post){
+var applyPathsRecursively = function(post){
 	var parent = post.parent;
 	if(parent){
 		post.path = parent.path + "_" + post.slug + '/';
@@ -158,10 +154,10 @@ var applyPaths = function(post){
 	}
 
 	for(var i = 0; i < post.children.length; i++){
-		applyPaths(post.children[i]);
+		applyPathsRecursively(post.children[i]);
 	}
 }
-var preprocessContent = function(post, templates){
+var preprocessContentRecursively = function(post, templates){
 	if(post.rawContent){
 		// Make the content into a template and run the data through it
 		var template = handlebars.compile(post.rawContent);
@@ -171,17 +167,17 @@ var preprocessContent = function(post, templates){
 	}
 
 	for(var i = 0; i < post.children.length; i++){
-		preprocessContent(post.children[i], templates);
+		preprocessContentRecursively(post.children[i], templates);
 	}
 }
-var applyCompiledTemplates = function(post, templates){
+var applyCompiledTemplatesRecursively = function(post, templates){
 	try{
 		post.compiled = templates[post.template](post);
 	}
 	catch(e){}
 
 	for(var i = 0; i < post.children.length; i++){
-		applyCompiledTemplates(post.children[i], templates);
+		applyCompiledTemplatesRecursively(post.children[i], templates);
 	}
 }
 var applyCompiled404Template = function(post, templates){
@@ -197,18 +193,18 @@ var clearRoot = function(path){
 	wrench.rmdirSyncRecursive(path, true);
 	fs.mkdirSync(path);
 }
-var createDirectories = function(post, rootPath){
+var createDirectoriesRecursively = function(post, rootPath){
 	wrench.mkdirSyncRecursive(rootPath + post.permalink , 0777);
 
 	for(var i = 0; i < post.children.length; i++){
-		createDirectories(post.children[i], rootPath);
+		createDirectoriesRecursively(post.children[i], rootPath);
 	}
 }
-var createIndexFiles = function(post, rootPath){
+var createIndexFilesRecursively = function(post, rootPath){
 	fs.writeFileSync(rootPath + post.permalink + 'index.html', post.compiled, 'utf8');
 
 	for(var i = 0; i < post.children.length; i++){
-		createIndexFiles(post.children[i], rootPath);
+		createIndexFilesRecursively(post.children[i], rootPath);
 	}
 }
 var create404File = function(post, rootPath){
@@ -217,14 +213,22 @@ var create404File = function(post, rootPath){
 		fs.writeFileSync(rootPath + post.permalink + '404.html', post.compiled404, 'utf8');
 	}
 }
-var createResourceSymlinks = function(post, rootContentPath, rootPublishPath){
+var createThemeResourcesSymlinks = function(theme, themePath, publishPath){
+	fs.mkdirSync(publishPath + '/theme/');
+	for (var i = 0; i < theme.resources.length; i++) {
+		var src = __dirname + '/' + themePath + '/' + theme.resources[i];
+		var dst = __dirname + '/' + publishPath + '/theme/' + theme.resources[i];
+		fs.symlinkSync(src, dst);
+	};
+}
+var createPostResourceSymlinksRecursively = function(post, rootContentPath, rootPublishPath){
 	for (var i = 0; i < post.resources.length; i++) {
 		var src = __dirname + '/' + rootContentPath + post.path +  post.resources[i];
 		var dst = __dirname + '/' + rootPublishPath + post.permalink +  post.resources[i];
 		fs.symlinkSync(src, dst);
 	};
 	for(var i = 0; i < post.children.length; i++){
-		createResourceSymlinks(post.children[i], rootContentPath, rootPublishPath);
+		createPostResourceSymlinksRecursively(post.children[i], rootContentPath, rootPublishPath);
 	}
 }
 var serve = function(path, port){
