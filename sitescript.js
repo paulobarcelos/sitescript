@@ -7,9 +7,14 @@ wrench = require('wrench'),
 md = require('marked'),
 static = require('node-static');
 
+var settings;
+
 var setup = function(options){
-	var settings = generateValidSettings(options);
-	
+	settings = generateValidSettings(options);
+}
+
+var build = function(){
+	if(!settings) = settings = generateValidSettings();
 	var theme = exctractTheme(settings.theme);
 	var rootPost = extractPostsRecursively(settings.posts);
 	
@@ -27,18 +32,22 @@ var setup = function(options){
 	create404File(rootPost, settings.serve);
 	createThemeResourcesSymlinks(theme, settings.theme, settings.serve);
 	createPostResourceSymlinksRecursively(rootPost, settings.posts, settings.serve);
-	
-	serve(settings.serve, settings.port);
 }
+
+var serve = function(){
+	if(!settings) = settings = generateValidSettings();
+	startServer(settings.serve, settings.port);
+}
+
 var generateValidSettings = function(options){
 	if(typeof(options) !== 'object'){
 		options = {};
 	}
 	if(!options.posts){
-		options.posts = './site/posts';
+		options.posts = './posts';
 	}
 	if(!options.theme){
-		options.theme = './site/theme';
+		options.theme = './theme';
 	}
 	if(!options.serve){
 		options.serve = './.www';
@@ -51,11 +60,12 @@ var generateValidSettings = function(options){
 }
 var extractPostsRecursively = function(path, root){
 	var post;
+
 	try{
-		post = require(path + '/data');
+		post = require(process.cwd() + '/' + path + '/data');
 	}
 	catch(e){
-		console.log(filename + ' is not a valid data file.');
+		console.log(process.cwd() + '/' + path + '/data' + ' is not a valid data file.', e);
 		post = {};	
 	}
 	post.children = [];
@@ -117,7 +127,7 @@ var exctractTheme = function(path){
 			continue;
 		}
 
-		if(stat.isFile() && (ext == 'html' || ext == 'html')){
+		if(stat.isFile() && (ext == 'htm' || ext == 'html')){
 			var id = filename.substr(0, filename.lastIndexOf('.')); // ignore extension
 			
 			var source = fs.readFileSync(path + '/' + filename, 'utf8');
@@ -216,22 +226,22 @@ var create404File = function(post, rootPath){
 var createThemeResourcesSymlinks = function(theme, themePath, publishPath){
 	fs.mkdirSync(publishPath + '/theme/');
 	for (var i = 0; i < theme.resources.length; i++) {
-		var src = __dirname + '/' + themePath + '/' + theme.resources[i];
-		var dst = __dirname + '/' + publishPath + '/theme/' + theme.resources[i];
+		var src = process.cwd() + '/' + themePath + '/' + theme.resources[i];
+		var dst = process.cwd() + '/' + publishPath + '/theme/' + theme.resources[i];
 		fs.symlinkSync(src, dst);
 	};
 }
 var createPostResourceSymlinksRecursively = function(post, rootContentPath, rootPublishPath){
 	for (var i = 0; i < post.resources.length; i++) {
-		var src = __dirname + '/' + rootContentPath + post.path +  post.resources[i];
-		var dst = __dirname + '/' + rootPublishPath + post.permalink +  post.resources[i];
+		var src = process.cwd() + '/' + rootContentPath + post.path +  post.resources[i];
+		var dst = process.cwd() + '/' + rootPublishPath + post.permalink +  post.resources[i];
 		fs.symlinkSync(src, dst);
 	};
 	for(var i = 0; i < post.children.length; i++){
 		createPostResourceSymlinksRecursively(post.children[i], rootContentPath, rootPublishPath);
 	}
 }
-var serve = function(path, port){
+var startServer = function(path, port){
 	var file = new(static.Server)(path);
 
 	var serve404 = function(request, response){

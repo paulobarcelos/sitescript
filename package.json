@@ -1,17 +1,25 @@
 {
 	"name": "sitescript",
-	"version": "0.0.1",
-	"author": "",
-	"description": "Static site thingie inspired by scriptogram-",
+	"version": "0.1.0",
+	"author": "Paulo Barcelos",
+	"description": "Static site thingie inspired by scriptogram.",
+	"homepage": "https://github.com/paulobarcelos/sitescript",
 	"dependencies" : {
-		"wrench": "1.4.3",
-		"node-static": "0.6.4",
-		"handlebars": "1.0.7",
-		"marked": "0.2.5"
+		"wrench": "1.4.4",
+		"node-static": "0.6.7",
+		"handlebars": "1.0.10",
+		"marked": "0.2.8"
 	},
+	"keyowords": [
+		"static site",
+		"cms",
+		"server",
+		"website"
+	],
 	"engines": {
 		"node": "0.6.x"
 	},
+	"main": "sitescript.js",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
