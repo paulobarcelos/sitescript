@@ -14,7 +14,7 @@ var setup = function(options){
 }
 
 var build = function(){
-	if(!settings) = settings = generateValidSettings();
+	if(!settings) settings = generateValidSettings();
 	var theme = exctractTheme(settings.theme);
 	var rootPost = extractPostsRecursively(settings.posts);
 	
@@ -35,7 +35,7 @@ var build = function(){
 }
 
 var serve = function(){
-	if(!settings) = settings = generateValidSettings();
+	if(!settings) settings = generateValidSettings();
 	startServer(settings.serve, settings.port);
 }
 
