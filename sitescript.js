@@ -263,3 +263,5 @@ var startServer = function(path, port){
 }
 
 exports.setup = setup;
+exports.build = build;
+exports.serve = serve;
